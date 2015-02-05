@@ -281,13 +281,13 @@ foreach (@variables)
     if ($_->{Variable_name} eq "version")
     {
         $db_version = $_->{Value};
-    $db_release = int(sprintf("%d",$db_version));
+        $db_release = int(sprintf("%d",$db_version));
         next;
     }
     if ($_->{Variable_name} eq "have_query_cache")
     {
 #        if ($_->{Value} eq 'YES')
-    if ($_->{Value} eq 'YES' or $_->{Value} eq 'DEMAND')  # http://freshmeat.net/users/jerjones
+        if ($_->{Value} eq 'YES' or $_->{Value} eq 'DEMAND')  # http://freshmeat.net/users/jerjones
         {
             $have_query_cache = 1;
         }
@@ -364,8 +364,8 @@ while (1)
     if ($key eq '!')
     {
         Execute("stop slave");
-    Execute("set global sql_slave_skip_counter=1");
-    Execute("start slave");
+        Execute("set global sql_slave_skip_counter=1");
+        Execute("start slave");
     }
 
     # t - top
@@ -421,14 +421,14 @@ while (1)
 
     if ($key eq 'C')
     {
-    if ( $HAS_COLOR ) 
+        if ( $HAS_COLOR ) 
         {
-        $HAS_COLOR = 0;
-    }
-    else
-    {
-        $HAS_COLOR = 1;
-    }
+            $HAS_COLOR = 0;
+        }
+        else
+        {
+            $HAS_COLOR = 1;
+        }
     }
 
     ## s - seconds of delay
@@ -441,8 +441,8 @@ while (1)
 
     if ($key eq 'S')
     {
-    cmd_S();
-    next;
+        cmd_S();
+        next;
     }
 
     ## R - resolve hostnames
@@ -781,13 +781,13 @@ sub GetData()
     {
         my @recs = "";
         if ( $db_release > 4 ) 
-    {
+        {
             @recs = Hashes("show global status");
-    } 
-    else 
-    {
+        } 
+        else 
+        {
            @recs = Hashes("show status");
-    }
+        }
 
         ## if the server died or we lost connectivity
         if (not @recs)
@@ -844,7 +844,7 @@ sub GetData()
         ## | Qcache_free_blocks      | 2        |
         ## | Qcache_total_blocks     | 168      |
         ## +-------------------------+----------+
-    ##
+        ##
         ## Query Cache info for => Ver. 5.0
         ##
         ## mysql> show status like 'qcache%';
@@ -877,10 +877,10 @@ sub GetData()
             }
         }
 
-    open L, "</proc/loadavg";
-    my $l = <L>;
-    close L;
-    chomp $l;
+        open L, "</proc/loadavg";
+        my $l = <L>;
+        close L;
+        chomp $l;
 
         $last_time = $now_time;
 
@@ -932,11 +932,11 @@ sub GetData()
 
         if ($t_delta)
         {
-          my $q_diff = ( $STATUS{Questions} - $OLD_STATUS{Questions} );
-#          print("q_diff: $STATUS{Questions} - $OLD_STATUS{Questions}  / $t_delta = $q_diff\n");
+            my $q_diff = ( $STATUS{Questions} - $OLD_STATUS{Questions} );
+#           print("q_diff: $STATUS{Questions} - $OLD_STATUS{Questions}  / $t_delta = $q_diff\n");
 
-          printf(" Sorts: %5.0f qps now: %4.0f Slow qps: %3.1f  Threads: %4.0f (%4.0f/%4.0f) %02.0f/%02.0f/%02.0f/%02.0f \n",
-         ( $STATUS{Sort_rows} - $OLD_STATUS{Sort_rows} ) / $t_delta, 
+            printf(" Sorts: %5.0f qps now: %4.0f Slow qps: %3.1f  Threads: %4.0f (%4.0f/%4.0f) %02.0f/%02.0f/%02.0f/%02.0f \n",
+             ( $STATUS{Sort_rows} - $OLD_STATUS{Sort_rows} ) / $t_delta, 
                  ( $STATUS{Questions} - $OLD_STATUS{Questions} ) / $t_delta,
                  ( # slow now (qps)
                   ($STATUS{Slow_queries} ) ?
@@ -965,43 +965,43 @@ sub GetData()
 
         if ($have_query_cache and $STATUS{Com_select} and $query_cache_hits)
         {
-          printf(" Cache Hits: %-5s Hits/s: %4.1f Hits now: %5.1f  Ratio: ",
+            printf(" Cache Hits: %-5s Hits/s: %4.1f Hits now: %5.1f  Ratio: ",
                  make_short($STATUS{Qcache_hits}),        # cache hits
                  $STATUS{Qcache_hits} / $STATUS{Uptime}, # hits / sec
                  ($t_delta) ?  ($STATUS{Qcache_hits} - $OLD_STATUS{Qcache_hits}) / $t_delta : 0,  # Hits Now
                  );
 
-          my($Ratio) =  100 * ($STATUS{Qcache_hits})  / ($STATUS{Qcache_hits} + $STATUS{Com_select} );
-          if ($HAS_COLOR)
-          {
+            my($Ratio) =  100 * ($STATUS{Qcache_hits})  / ($STATUS{Qcache_hits} + $STATUS{Com_select} );
+            if ($HAS_COLOR)
+            {
                 print YELLOW() if ($Ratio < 80.0);
                 print RED() if ($Ratio < 50.0);
                 print MAGENTA() if ($Ratio < 20.0);
-          }
-          printf("%4.1f%% ",$Ratio);
-          if ($HAS_COLOR)
-          {
+            }
+            printf("%4.1f%% ",$Ratio);
+            if ($HAS_COLOR)
+            {
                 print RESET();
-          }
+            }
 
-          print " Ratio now: ";
-          my($Ratio_now) = ($t_delta) ?   # ratio now
+            print " Ratio now: ";
+            my($Ratio_now) = ($t_delta) ?   # ratio now
                  100 * ($STATUS{Qcache_hits} - $OLD_STATUS{Qcache_hits} ) /
                  ( ($STATUS{Com_select} + $STATUS{Qcache_hits} -
                     ($OLD_STATUS{Qcache_hits} + $OLD_STATUS{Com_select})
                    ) || 1) : 0;
-          if ($HAS_COLOR)
-          {
+            if ($HAS_COLOR)
+            {
                 print GREEN() if ($Ratio_now => 80.0);
                 print YELLOW() if ($Ratio_now < 80.0);
                 print RED() if ($Ratio_now < 50.0);
                 print MAGENTA() if ($Ratio_now < 20.0);
-          }
-          printf("%4.1f%% \n",$Ratio_now);
-          if ($HAS_COLOR)
-          {
+            }
+            printf("%4.1f%% \n",$Ratio_now);
+            if ($HAS_COLOR)
+            {
                 print RESET();
-          }
+            }
         }
         $lines_left--;
 
@@ -1025,7 +1025,6 @@ sub GetData()
 
         $lines_left--;
 
-        use Data::Dumper;
         my @slaves = qq//;
         $data = Records('SHOW ALL SLAVES STATUS');
         if (defined($data))
@@ -1157,11 +1156,11 @@ sub GetData()
         $thread->{User}    ||= '';
         $thread->{Command} ||= '';
         $thread->{Host}    ||= '';
-    $thread->{State}   ||= "";
+        $thread->{State}   ||= "";
 
-    ## alter double hyphen comments so they don't break 
-    ## the query when newlines are removed - http://freshmeat.net/users/jerjones
-    $thread->{Info} =~ s~\s--(.*)$~ /* $1 */ ~mg; 
+        ## alter double hyphen comments so they don't break 
+        ## the query when newlines are removed - http://freshmeat.net/users/jerjones
+        $thread->{Info} =~ s~\s--(.*)$~ /* $1 */ ~mg; 
 
         ## Normalize spaces -- mostly disabled for now.  This can
         ## break EXPLAIN if you try to explain a mangled query.  It
@@ -1247,7 +1246,7 @@ sub GetData()
             print WHITE()  if $thread->{Command} eq 'Sleep';
             print GREEN()  if $thread->{Command} eq 'Connect';
             print BOLD() if $thread->{Time} > $config{slow};
-        print MAGENTA() if $thread->{Time} > $config{long};
+            print MAGENTA() if $thread->{Time} > $config{long};
         }
 
         printf "%9d %9.9s %15.15s %10.10s %10d %6.6s %8.8s %-${free}.${free}s\n",
@@ -1728,6 +1727,8 @@ sub Hashes($)
     }
     return @records;
 }
+
+## Run a query and return the records has an array ref.
 
 sub Records($)
 {
@@ -2258,7 +2259,9 @@ Many thanks go to these fine folks:
 
 =item Grégory Duchatelet (gregory@duchatelet.net)
 
-TODO
+Added support for multi-sources introduced in MariaDB 10.
+Fix indentation.
+Created release 2.0.
 
 =item Mark Grennan (mark@grennan.com) www.linuxfangoy.com
 
