@@ -1,10 +1,40 @@
-Version 1.7:
+Version 1.9.1: - Mark Grennan
+  Released 1.9.1 on Feb 14, 2012. Be my Valintine
 
-  Released 1.7 on March 21th, 2009.
+  Added display of system load level on the top line and Readonly state
+  and Delay to the replication line.
 
-  Fixes for 64-bit thread ids and SHOW GLOBAL syntax in MySQL 5.
+  Released 1.9 on July 23, 2010.
 
-  (Finally resurrected this while working at craigslist.org.)
+  Added monitoring of Slave status.
+
+  New command '!' to force past a replication error.
+
+  Added number of rows sorted per second.
+
+  Added a new 'Cmd' column to display the State of the query along with 
+  the statment.
+
+  New command 'M' to chnage [mode] to status show changes.
+
+Version 1.8: - Mark Grennan
+  Released 1.8 on May 21, 2010.
+
+  Added fixed for changed in MySQL 5.1 and 64 bit systems. 
+
+  Completed TODO - "make 'C' togle display color".
+
+  New command 'S' command. Highlights slow queries less then 'S' seconds.
+  The default is 10 seconds.
+
+  New command 'l' for long queries. Default is 120 seconds.  Queries 
+  longer then is are colored Magenta.
+
+  New command 't' to filter based on State.
+
+  Removed the 'Daemon' command type from the idle dispaly.
+
+  Fixed documentations errors.
 
 Version 1.6:
 

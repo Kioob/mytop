@@ -1,8 +1,9 @@
-README for mytop version 1.7
-============================
+README for mytop version 1.9.1
+==============================
 
 WEB
 
+  http://www.mysqlfanboy.com/mytop/
   http://jeremy.zawodny.com/mysql/mytop/
 
 ABOUT
@@ -10,10 +11,18 @@ ABOUT
   mytop is a `top' clone for MySQL
 
   mytop is a console-based (non-gui) tool for monitoring the threads
-  and overall performance of MySQL 3.22.x, 3.23.x, and 4.x servers. It
-  runs on most Unix systems which have Perl, DBI, and Term::ReadKey
+  and overall performance of MySQL 3.22.x, 3.23.x, 4.x and 5.x servers.
+  It runs on most Unix systems which have Perl, DBI, and Term::ReadKey
   installed. And with Term::ANSIColor installed you even get color. As
   of version 0.7, it even runs on Windows (somewhat).
+
+  This release is based on release 1.6 and updated to 1.8 (Jeremy did
+  a bug releae of 1.7 so I've jumped to 1.8)
+
+  I (Mark Grennan) have continued to inprove mytop for people who use
+  mostly MyISAM databases.  If you use InnoDB databases you should loook
+  at using innotop.
+  (http://www.xaprb.com/blog/2006/07/02/innotop-mysql-innodb-monitor/)
 
 INSTALLATION
 
@@ -32,12 +41,15 @@ DOCUMENTATION
 
 AUTHOR
 
-  Jeremy D. Zawodny <Jeremy@Zawodny.com>
+  Jeremy D. Zawodny <Jeremy@Zawodny.com> 
+
+  updates by:
+  Mark Grennan <mark@grennan.com>
 
 COPYRIGHT
 
-  mytop is licensed under the GNU General Public License version
-  2. For the full license information, please visit
+  mytop is licensed under the GNU General Public License version 2. 
+  For the full license information, please visit
 
   http://www.gnu.org/copyleft/gpl.html
 

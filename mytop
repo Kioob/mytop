@@ -1,9 +1,6 @@
 #!/usr/bin/perl -w
-
-eval 'exec /usr/bin/perl -w -S $0 ${1+"$@"}'
-    if 0; # not running under some shell
 #
-# $Id: mytop,v 1.4 2009/01/21 01:42:10 jzawodn Exp $
+# $Id: mytop,v 1.91 2012/01/18 16:49:12 mgrennan Exp $
 
 =pod
 
@@ -15,15 +12,14 @@ mytop - display MySQL server performance info like `top'
 
 ## most of the POD is at the bottom of the file
 
-## TODO: make 'C' toggle color
-
 use 5.005;
 use strict;
 use DBI;
 use Getopt::Long;
+use DBD::mysql;
 use Socket;
 
-$main::VERSION = "1.7";
+$main::VERSION = "1.91";
 
 $|=1;
 $0 = 'mytop';
@@ -70,6 +66,7 @@ sub GetCmdSummary();
 sub GetShowVariables();
 sub GetShowStatus();
 sub cmd_s;
+sub cmd_S;
 sub cmd_q;
 sub FindProg($);
 
@@ -83,19 +80,22 @@ my %config = (
     filter_user   => qr/.?/,
     filter_db     => qr/.?/,
     filter_host   => qr/.?/,
+    filter_state  => qr/.?/,
     header        => 1,
     help          => 0,
     host          => 'localhost',
     idle          => 1,
+    long	  => 120,
     long_nums     => 0,
     mode          => 'top',
     prompt        => 0,
     pass          => '',
     port          => 3306,
-    resolve       => 1,
+    resolve       => 0,
+    slow	  => 10,	# slow query time
     socket        => '',
-    sort          => 0,         # default or reverse sort ("s")
-    user          => 'root',
+    sort          => 1,         # default or reverse sort ("s")
+    user          => 'root'
 );
 
 my %qcache = ();    ## The query cache--used for full query info support.
@@ -153,12 +153,14 @@ GetOptions(
     "delay|s=i"           => \$config{delay},
     "batch|batchmode|b"   => \$config{batchmode},
     "header!"             => \$config{header},
-    "idle|i"              => \$config{idle},
-    "resolve|r"           => \$config{resolve},
+    "idle|i!"             => \$config{idle},
+    "resolve|r!"          => \$config{resolve},
     "prompt!"             => \$config{prompt},
-    "long!"               => \$config{long_nums},
+    "long=i"		  => \$config{long},
+    "long_nums!"          => \$config{long_nums},
     "mode|m=s"            => \$config{mode},
-    "sort=s"              => \$config{sort},
+    "slow=i"		  => \$config{slow},
+    "sort=s"              => \$config{sort}
 );
 
 ## User may have put the port with the host.
@@ -192,6 +194,7 @@ else
     *RESET  = sub { };
     *YELLOW = sub { };
     *RED    = sub { };
+    *MAGENTA  = sub { };
     *GREEN  = sub { };
     *BLUE   = sub { };
     *WHITE  = sub { };
@@ -201,6 +204,7 @@ else
 my $RESET  = RESET()   || '';
 my $YELLOW = YELLOW()  || '';
 my $RED    = RED()     || '';
+my $MAGENTA  = MAGENTA()   || '';
 my $GREEN  = GREEN()   || '';
 my $BLUE   = BLUE()    || '';
 my $WHITE  = WHITE()   || '';
@@ -266,6 +270,7 @@ ReadMode($RM_RESET) unless $config{batchmode};
 ## Get static data
 
 my $db_version;
+my $db_release;
 my $have_query_cache;
 
 my @variables = Hashes("show variables");
@@ -275,11 +280,13 @@ foreach (@variables)
     if ($_->{Variable_name} eq "version")
     {
         $db_version = $_->{Value};
+	$db_release = int(sprintf("%d",$db_version));
         next;
     }
     if ($_->{Variable_name} eq "have_query_cache")
     {
-        if ($_->{Value} eq 'YES')
+#        if ($_->{Value} eq 'YES')
+	if ($_->{Value} eq 'YES' or $_->{Value} eq 'DEMAND')  # http://freshmeat.net/users/jerjones
         {
             $have_query_cache = 1;
         }
@@ -353,6 +360,13 @@ while (1)
     ## keystroke command processing (if we get this far)
     ##
 
+    if ($key eq '!')
+    {
+        Execute("stop slave");
+	Execute("set global sql_slave_skip_counter=1");
+	Execute("start slave");
+    }
+
     # t - top
 
     if ($key =~ /t/i)
@@ -372,6 +386,14 @@ while (1)
         require Data::Dumper;
         print Data::Dumper::Dumper([\%config]);
         ReadKey(0);
+    }
+
+    ## l - change long running hightling
+
+    if ($key eq 'l')
+    {
+        cmd_l();
+        next;
     }
 
     ## m - mode swtich to qps
@@ -394,12 +416,32 @@ while (1)
         next;
     }
 
+    ## C - change Color on and off
+
+    if ($key eq 'C')
+    {
+	if ( $HAS_COLOR ) 
+        {
+	    $HAS_COLOR = 0;
+	}
+	else
+	{
+	    $HAS_COLOR = 1;
+	}
+    }
+
     ## s - seconds of delay
 
     if ($key eq 's')
     {
         cmd_s();
         next;
+    }
+
+    if ($key eq 'S')
+    {
+	cmd_S();
+	next;
     }
 
     ## R - resolve hostnames
@@ -413,6 +455,17 @@ while (1)
         {
             $config{resolve} = 1;
         }
+    }
+
+    ## t - username based filter
+
+    if ($key eq 't')
+    {
+        ReadMode($RM_RESET);
+        print RED(), "Which state (blank for all, /.../ for regex): ", RESET();
+        $config{filter_state} = StringOrRegex(ReadLine(0));
+        ReadMode($RM_NOBLKRD);
+        next;
     }
 
     ## u - username based filter
@@ -450,13 +503,25 @@ while (1)
         next;
     }
 
+    ## E - Show full Replication Error
+
+    if ($key eq 'E')
+    {
+	my($data) = Hashes('SHOW SLAVE STATUS');
+	Clear();
+	print "Error is: $data->{Last_Error}\n";
+        print RED(), "-- paused. press any key to resume --", RESET();
+	ReadKey(0);
+	next;
+    }
     ## F - remove all filters
 
     if ($key eq 'F')
     {
-        $config{filter_host} = qr/.?/;
-        $config{filter_db}   = qr/.?/;
-        $config{filter_user} = qr/.?/;
+        $config{filter_host}  = qr/.?/;
+        $config{filter_db}    = qr/.?/;
+        $config{filter_user}  = qr/.?/;
+        $config{filter_state} = qr/.?/;
         print RED(), "-- display unfiltered --", RESET();
         sleep 1;
         next;
@@ -713,7 +778,15 @@ sub GetData()
     ##
     if ($config{header})
     {
-        my @recs = Hashes("SHOW GLOBAL STATUS");
+        my @recs = "";
+        if ( $db_release > 4 ) 
+	{
+            @recs = Hashes("show global status");
+	} 
+	else 
+	{
+           @recs = Hashes("show status");
+	}
 
         ## if the server died or we lost connectivity
         if (not @recs)
@@ -756,7 +829,7 @@ sub GetData()
         my $cache_hits_percent = (100-($STATUS{Key_reads}/$STATUS{Key_read_requests}) * 100);
         $cache_hits_percent = sprintf("%2.2f",$cache_hits_percent);
 
-        ## Query Cache info
+        ## Query Cache info for <= Ver. 4.1
         ##
         ## mysql> show status like 'qcache%';
         ## +-------------------------+----------+
@@ -770,6 +843,22 @@ sub GetData()
         ## | Qcache_free_blocks      | 2        |
         ## | Qcache_total_blocks     | 168      |
         ## +-------------------------+----------+
+	##
+        ## Query Cache info for => Ver. 5.0
+        ##
+        ## mysql> show status like 'qcache%';
+        ## +-------------------------+------------+
+        ## | Variable_name           | Value      |
+        ## +-------------------------+------------+
+        ## | Qcache_free_blocks      | 37652      |
+        ## | Qcache_free_memory      | 110289712  |
+        ## | Qcache_hits             | 1460617356 |
+        ## | Qcache_inserts          | 390563495  |
+        ## | Qcache_lowmem_prunes    | 6414172    |
+        ## | Qcache_not_cached       | 93002420   |
+        ## | Qcache_queries_in_cache | 66558      |
+        ## | Qcache_total_blocks     | 192031     |
+        ## +-------------------------+------------+
 
         my $query_cache_hits             = 0;
         my $query_cache_hits_per_sec     = 0;
@@ -786,6 +875,11 @@ sub GetData()
                 $now_query_cache_hits_per_sec = sprintf "%.2f", $q_delta / $t_delta;
             }
         }
+
+	open L, "</proc/loadavg";
+	my $l = <L>;
+	close L;
+	chomp $l;
 
         $last_time = $now_time;
 
@@ -810,7 +904,7 @@ sub GetData()
 
         my $current_time = sprintf "[%02d:%02d:%02d]", $t[2], $t[1], $t[0];
 
-        my $host_width = 52;
+        my $host_width = 75;
         my $up_width   = $width - $host_width;
 
         Clear() unless $config{batchmode};
@@ -818,11 +912,11 @@ sub GetData()
 
         printf "%-${host_width}s%${up_width}s\n",
                "MySQL on $config{host} ($db_version)",
-               "up $uptime $current_time";
+               "load $l up $uptime $current_time";
         $lines_left--;
 
 
-        printf " Queries: %-5s  qps: %4.0f Slow: %7s         Se/In/Up/De(%%):    %02.0f/%02.0f/%02.0f/%02.0f \n",
+        printf " Queries: %-6s  qps: %4.0f Slow: %7s         Se/In/Up/De(%%):    %02.0f/%02.0f/%02.0f/%02.0f \n",
                make_short( $STATUS{Questions} ),  # q total
                $STATUS{Questions} / $STATUS{Uptime},  # qps, average
                make_short( $STATUS{Slow_queries} ),    # slow
@@ -840,7 +934,8 @@ sub GetData()
           my $q_diff = ( $STATUS{Questions} - $OLD_STATUS{Questions} );
 #          print("q_diff: $STATUS{Questions} - $OLD_STATUS{Questions}  / $t_delta = $q_diff\n");
 
-          printf("             qps now: %4.0f Slow qps: %3.1f  Threads: %4.0f (%4.0f/%4.0f) %02.0f/%02.0f/%02.0f/%02.0f \n",
+          printf(" Sorts: %5.0f qps now: %4.0f Slow qps: %3.1f  Threads: %4.0f (%4.0f/%4.0f) %02.0f/%02.0f/%02.0f/%02.0f \n",
+		 ( $STATUS{Sort_rows} - $OLD_STATUS{Sort_rows} ) / $t_delta, 
                  ( $STATUS{Questions} - $OLD_STATUS{Questions} ) / $t_delta,
                  ( # slow now (qps)
                   ($STATUS{Slow_queries} ) ?
@@ -869,20 +964,46 @@ sub GetData()
 
         if ($have_query_cache and $STATUS{Com_select} and $query_cache_hits)
         {
-          printf(" Cache Hits: %-5s Hits/s: %4.1f Hits now: %5.1f  Ratio: %4.1f%% Ratio now: %4.1f%% \n", 
+          printf(" Cache Hits: %-5s Hits/s: %4.1f Hits now: %5.1f  Ratio: ",
                  make_short($STATUS{Qcache_hits}),        # cache hits
                  $STATUS{Qcache_hits} / $STATUS{Uptime}, # hits / sec
-                 ($t_delta) ?  ($STATUS{Qcache_hits} - $OLD_STATUS{Qcache_hits}) / $t_delta : 0,  # now / s
-                 # ratio: 
-                 100 * ($STATUS{Qcache_hits})  / ($STATUS{Qcache_hits} + $STATUS{Com_select} ),
-                 ($t_delta) ?   # ratio now
+                 ($t_delta) ?  ($STATUS{Qcache_hits} - $OLD_STATUS{Qcache_hits}) / $t_delta : 0,  # Hits Now
+                 );
+
+          my($Ratio) =  100 * ($STATUS{Qcache_hits})  / ($STATUS{Qcache_hits} + $STATUS{Com_select} );
+          if ($HAS_COLOR)
+          {
+                print YELLOW() if ($Ratio < 80.0);
+                print RED() if ($Ratio < 50.0);
+                print MAGENTA() if ($Ratio < 20.0);
+          }
+          printf("%4.1f%% ",$Ratio);
+          if ($HAS_COLOR)
+          {
+                print RESET();
+          }
+
+          print " Ratio now: ";
+          my($Ratio_now) = ($t_delta) ?   # ratio now
                  100 * ($STATUS{Qcache_hits} - $OLD_STATUS{Qcache_hits} ) /
                  ( ($STATUS{Com_select} + $STATUS{Qcache_hits} -
                     ($OLD_STATUS{Qcache_hits} + $OLD_STATUS{Com_select})
-                   ) || 1) : 0,
-                 );
+                   ) || 1) : 0;
+          if ($HAS_COLOR)
+          {
+                print GREEN() if ($Ratio_now => 80.0);
+                print YELLOW() if ($Ratio_now < 80.0);
+                print RED() if ($Ratio_now < 50.0);
+                print MAGENTA() if ($Ratio_now < 20.0);
+          }
+          printf("%4.1f%% \n",$Ratio_now);
+          if ($HAS_COLOR)
+          {
+                print RESET();
+          }
         }
         $lines_left--;
+
 
         printf(" Key Efficiency: %2.1f%%  Bps in/out: %5s/%5s   ",
                $cache_hits_percent,
@@ -892,9 +1013,52 @@ sub GetData()
                make_short(($STATUS{Bytes_received} - $OLD_STATUS{Bytes_received}) / $t_delta ),
                make_short(($STATUS{Bytes_sent} - $OLD_STATUS{Bytes_sent}) / $t_delta ))
           if ($t_delta);
-        print "\n\n";
+        print "\n";
 
         $lines_left--;
+
+        my($data) = Hashes('show global variables like "read_only"');
+        if ($data->{Value} ne "OFF")
+        {
+            print RED() if ($HAS_COLOR) ;
+            print " ReadOnly";
+	    RESET() if ($HAS_COLOR);
+        }
+
+	my($data) = Hashes('SHOW SLAVE STATUS');
+	if (defined($data->{Master_Host}))
+        {
+	    if (defined($data->{Seconds_Behind_Master}))
+	    {
+                if ($HAS_COLOR) {
+	  	    print GREEN();
+		    print YELLOW() if ($data->{Seconds_Behind_Master}  >  60);
+		    print MAGENTA() if ($data->{Seconds_Behind_Master} > 360);
+	        }
+	    }
+	    print " Replication ";
+	    print "IO:$data->{Slave_IO_Running} ";
+ 	    print "SQL:$data->{Slave_SQL_Running} ";
+	    print RESET() if ($HAS_COLOR);
+
+ 	    if (defined($data->{Seconds_Behind_Master}))
+	    {
+        	if ($HAS_COLOR) {
+			print GREEN();
+			print YELLOW() if ($data->{Seconds_Behind_Master}  >  60);
+			print MAGENTA() if ($data->{Seconds_Behind_Master} > 360);
+		}
+		print "Delay: $data->{Seconds_Behind_Master} sec.";
+	    } else {
+	        my $free = $width - 45;
+		my $Err = substr $data->{Last_Error},0 ,$free;
+	        printf(" ERR: %-${free}s", $Err) if ( $Err ne "" );
+	    }
+	    print WHITE() if ($HAS_COLOR);
+	    print "\n";
+	    $lines_left--;
+	}
+	print "\n";
     }
 
     if (not $config{batchmode} and not $config{header})
@@ -908,20 +1072,20 @@ sub GetData()
     ##
 
     #my $sz = $width - 52;
-    my @sz   = (9, 9, 15, 10, 9, 6);
+    my @sz   = (9, 9, 15, 10, 10, 6, 8);
     my $used = scalar(@sz) + Sum(@sz);
     my $free = $width - $used;
 
-    print BOLD();
+    print BOLD() if ($HAS_COLOR);
 
-    printf "%8s %9s %15s %10s %9s %6s %-${free}s\n",
-        'Id','User','Host/IP','DB','Time', 'Cmd', 'Query or State';
+    printf "%9s %9s %15s %10s %10s %6s %8s %-${free}s\n",
+        'Id','User','Host/IP','DB','Time', 'Cmd', 'State', 'Query';
 
-    print RESET();
+    print RESET() if ($HAS_COLOR);
 
     ##      Id User Host DB
-    printf "%9s %9s %15s %10s %9s %6s %-${free}s\n",
-        '--','----','-------','--','----', '---', '----------';
+    printf "%9s %9s %15s %10s %10s %6s %8s %-${free}s\n",
+        '--','----','-------','--','----', '---', '-----', '----------';
 
     $lines_left -= 2;
 
@@ -954,8 +1118,9 @@ sub GetData()
         if ($is_ip and $config{resolve})
         {
             $thread->{Host} =~ s/:\d+$//;
-            my $host = gethostbyaddr(inet_aton($thread->{Host}), AF_INET);
-            $host =~ s/^([^.]+).*/$1/;
+#	    my $host = $thread->{Host};
+	    my $host = gethostbyaddr(inet_aton($thread->{Host}), AF_INET);
+#            $host =~ s/^([^.]+).*/$1/;
             $thread->{Host} = $host;
         }
 
@@ -968,6 +1133,11 @@ sub GetData()
         $thread->{User}    ||= '';
         $thread->{Command} ||= '';
         $thread->{Host}    ||= '';
+	$thread->{State}   ||= "";
+
+	## alter double hyphen comments so they don't break 
+	## the query when newlines are removed - http://freshmeat.net/users/jerjones
+	$thread->{Info} =~ s~\s--(.*)$~ /* $1 */ ~mg; 
 
         ## Normalize spaces -- mostly disabled for now.  This can
         ## break EXPLAIN if you try to explain a mangled query.  It
@@ -1019,9 +1189,16 @@ sub GetData()
                  and
                  (not $config{idle}));
 
-        next if ($thread->{User} !~ $config{filter_user});
-        next if ($thread->{db}   !~ $config{filter_db});
-        next if ($thread->{Host} !~ $config{filter_host});
+        next if (($thread->{Command} eq "Daemon")
+                 and
+                 (not $config{idle}));
+
+        next if ($thread->{User}  !~ $config{filter_user});
+        next if ($thread->{db}    !~ $config{filter_db});
+        next if ($thread->{Host}  !~ $config{filter_host});
+        next if ($thread->{State} !~ $config{filter_state});
+
+        $thread->{State} = trim(sprintf("%8.8s",$thread->{State}));
 
         # Otherwise, print.
 
@@ -1031,10 +1208,10 @@ sub GetData()
         {
             $smInfo = substr $thread->{Info}, 0, $free;
         }
-        elsif ($thread->{State})
-        {
-            $smInfo = substr $thread->{State}, 0, $free;
-        }
+#        if ($thread->{State})
+#        {
+#            $smInfo = substr $thread->{State}, 0, $free;
+#        }
         else
         {
             $smInfo = "";
@@ -1045,11 +1222,13 @@ sub GetData()
             print YELLOW() if $thread->{Command} eq 'Query';
             print WHITE()  if $thread->{Command} eq 'Sleep';
             print GREEN()  if $thread->{Command} eq 'Connect';
+            print BOLD() if $thread->{Time} > $config{slow};
+	    print MAGENTA() if $thread->{Time} > $config{long};
         }
 
-        printf "%9d %9.9s %15.15s %10.10s %9d %6.6s %-${free}.${free}s\n",
+        printf "%9d %9.9s %15.15s %10.10s %10d %6.6s %8.8s %-${free}.${free}s\n",
             $thread->{Id}, $thread->{User}, $thread->{Host}, $thread->{db},
-            $thread->{Time}, $thread->{Command}, $smInfo;
+            $thread->{Time}, $thread->{Command}, $thread->{State}, $smInfo;
 
         print RESET() if $HAS_COLOR;
 
@@ -1129,7 +1308,7 @@ sub GetCmdSummary()
     }
 
     # Variable_name and Value pairs come back...
-    my @data = Hashes("SHOW GLOBAL STATUS LIKE 'Com_%'");
+    my @data = Hashes("SHOW STATUS LIKE 'Com_%'");
     my %cmd_data;
     my %cmd_delta;
     my %cmd_pct;
@@ -1219,7 +1398,7 @@ sub GetShowVariables()
 sub GetShowStatus()
 {
     Clear() unless $config{batchmode};
-    my @rows = Hashes("SHOW GLOBAL STATUS");
+    my @rows = Hashes("SHOW STATUS");
 
     printf "%32s  %10s %10s\n", 'Counter', 'Total', 'Change';
     printf "%32s  %10s %10s\n", '-------', '-----', '------';
@@ -1365,6 +1544,24 @@ sub StringOrRegex($)
 
 ###########################################################################
 
+sub cmd_l
+{
+    ReadMode($RM_RESET);
+
+    print RED(), "Seconds for long queries: ", RESET();
+    my $secs = ReadLine(0);
+
+    if ($secs =~ /^\s*(\d+)/)
+    {
+        $config{long} = $1;
+        if ($config{long} < 1)
+        {
+            $config{long} = 1;
+        }
+    }
+    ReadMode($RM_NOBLKRD);
+}
+
 sub cmd_s
 {
     ReadMode($RM_RESET);
@@ -1383,11 +1580,37 @@ sub cmd_s
     ReadMode($RM_NOBLKRD);
 }
 
+sub cmd_S
+{
+    ReadMode($RM_RESET);
+
+    print RED(), "Seconds for Slow queries: ", RESET();
+    my $secs = ReadLine(0);
+
+    if ($secs =~ /^\s*(\d+)/)
+    {
+        $config{slow} = $1;
+        if ($config{slow} < 1)
+        {
+            $config{slow} = 1;
+        }
+    }
+    ReadMode($RM_NOBLKRD);
+}
+
 sub cmd_q
 {
     ReadMode($RM_RESET);
     print "\n";
     exit;
+}
+
+sub trim($)
+{
+	my $string = shift;
+	$string =~ s/^\s+//;
+	$string =~ s/\s+$//;
+	return $string;
 }
 
 ###########################################################################
@@ -1396,12 +1619,15 @@ sub PrintHelp()
 {
     my $help = qq[
 Help for mytop version $main::VERSION by Jeremy D. Zawodny <${YELLOW}Jeremy\@Zawodny.com${RESET}>
+ with updates by Mark Grennan <${YELLOW}mark\@grennan.com${RESET}>
 
   ? - display this screen
   # - toggle short/long numbers (not yet implemented)
   c - command summary view (based on Com_* counters)
+  C - turn color on and off
   d - show only a specific database
   e - explain the query that a thread is running
+  E - display current replication error
   f - show full query info for a given thread
   F - unFilter the dispaly
   h - show only a specifc host's connections
@@ -1410,16 +1636,21 @@ Help for mytop version $main::VERSION by Jeremy D. Zawodny <${YELLOW}Jeremy\@Zaw
   I - show innodb status
   k - kill a thread
   p - pause the display
+  l - change long running queries hightlighing
   m - switch [mode] to qps (queries/sec) scrolling view
   o - reverse the sort order (toggle)
   q - quit
   r - reset the status counters (via FLUSH STATUS on your server)
+  R - change reverse IP lookup
   s - change the delay between screen updates
+  S - change slow quiery hightlighting
   t - switch to thread view (default)
   u - show only a specific user
   : - enter a command (not yet implemented)
+  ! - Skip an error that has stopped replications (at your own risk)
 
 ${GREEN}http://jeremy.zawodny.com/mysql/mytop/${RESET}
+${GREEN}http://www.mysqlfanboy.com/mytop/${RESET}
 ];
 
     print $help;
@@ -1546,7 +1777,7 @@ pick up Term::ReadKey here:
 
 And you obviously need access to a MySQL server (version 3.22.x or
 3.23.x) with the necessary security to run the I<SHOW PROCESSLIST> and
-I<SHOW GLOBAL STATUS> commands.
+I<SHOW STATUS> commands.
 
 If you are a Windows user, using ActiveState's Perl, you can use PPM
 (the Perl Package Manager) to install the MySQL and Term::ReadKey
@@ -1602,7 +1833,7 @@ routinely use B<top> on Linux, FreeBSD, and Solaris. You are likely to
 notice features from each of them here.
 
 B<mytop> will connect to a MySQL server and periodically run the
-I<SHOW PROCESSLIST> and I<SHOW GLOBAL STATUS> commands and attempt to
+I<SHOW PROCESSLIST> and I<SHOW STATUS> commands and attempt to
 summarize the information from them in a useful format.
 
 =head2 The Display
@@ -1661,17 +1892,18 @@ C<Command> column of the display:
     Query   -  Yellow
     Sleep   -  White
     Connect -  Green
+    Slow    -  Bright
+    Long    -  Magenta
 
 Those are purely arbitrary and will be customizable in a future
-release. If they annoy you just start B<mytop> with the B<-nocolor>
+release. If they annoy you just start B<mytop> with the B<--nocolor>
 flag or adjust your config file appropriately.
 
 =head2 Arguments
 
 B<mytop> handles long and short command-line arguments. Not all
 options have both long and short formats, however. The long arguments
-can start with one or two dashes `-' or `--'. They are shown here with
-just one.
+have two dashes `--'. Short arguments only have one '-'.
 
 =over
 
@@ -1683,27 +1915,27 @@ Username to use when logging in to the MySQL server. Default: ``root''.
 
 Password to use when logging in to the MySQL server. Default: none.
 
-=item B<-h> or B<-host> hostname[:port]
+=item B<-h> or B<--host> hostname[:port]
 
 Hostname of the MySQL server. The hostname may be followed by an
 option port number. Note that the port is specified separate from the
 host when using a config file. Default: ``localhost''.
 
-=item B<-port> or B<-P> port
+=item B<--port> or B<-P> port
 
 If you're running MySQL on a non-standard port, use this to specify
 the port number. Default: 3306.
 
-=item B<-s> or B<-delay> seconds
+=item B<-s> or B<--delay> seconds
 
 How long between display refreshes. Default: 5
 
-=item B<-d> or B<-db> or B<-database> database
+=item B<-d> or B<--db> or B<--database> database
 
 Use if you'd like B<mytop> to connect to a specific database by
 default. Default: ``test''.
 
-=item B<-b> or B<-batch> or B<-batchmode>
+=item B<-b> or B<--batch> or B<--batchmode>
 
 In batch mode, mytop runs only once, does not clear the screen, and
 places no limit on the number of lines it will print. This is suitable
@@ -1714,7 +1946,7 @@ web.
 
 Default: unset.
 
-=item B<-S> or B<-socket> /path/to/socket
+=item B<-S> or B<--socket> /path/to/socket
 
 If you're running B<mytop> on the same host as MySQL, you may wish to
 have it use the MySQL socket directly rather than a standard TCP/IP
@@ -1727,14 +1959,14 @@ ignored and B<mytop> will use the hostname and port number instead.
 
 Default: none.
 
-=item B<-header> or B<-noheader>
+=item B<--header> or B<--noheader>
 
 Sepcify if you want the header to display or not. You can toggle this
 with the B<h> key while B<mytop> is running.
 
 Default: header.
 
-=item B<-color> or B<-nocolor>
+=item B<--color> or B<--nocolor>
 
 Specify if you want a color display. This has no effect if you don't
 have color support available.
@@ -1742,7 +1974,7 @@ have color support available.
 Default: If you have color support, B<mytop> will try color unless you
 tell it not to.
 
-=item B<-i> or B<-idle> or B<-noidle>
+=item B<-i> or B<--idle> or B<--noi> or B<--noidle>
 
 Specify if you want idle (sleeping) threads to appear in the list. If
 sleeping threads are omitted, the default sorting order is reversed so
@@ -1750,7 +1982,7 @@ that the longest running queries appear at the top of the list.
 
 Default: idle.
 
-=item B<-prompt> or B<-noprompt>
+=item B<--prompt> or B<--noprompt>
 
 Specify if you want to be prompted to type in your database password.
 This provides a little bit more security since it not only prevents
@@ -1761,7 +1993,7 @@ your config file or through another command line option.
 
 Default: noprompt.
 
-=item B<-resolve>
+=item B<--resolve>
 
 If you have skip-resolve set on MySQL (to keep it from doing a reverse
 DNS lookup on each inbound connection), mytop can replace IP addresses
@@ -1792,11 +2024,13 @@ described above.
   db=test
   delay=5
   port=3306
+  slow=10
   socket=
   batchmode=0
   header=1
   color=1
   idle=1
+  long=120
 
 Using a config file will help to ensure that your database password
 isn't visible to users on the command-line. Just make sure that the
@@ -1820,8 +2054,12 @@ Display help.
 
 =item B<c>
 
-Show "command counters" based on the Com_* values in SHOW GLOBAL
-STATUS.  This is a new feature.  Feedback welcome.
+Show "command counters" based on the Com_* values in SHOW STATUS.
+This is a new feature.  Feedback welcome.
+
+=item B<C>
+
+Turn display color on and off. Default is on.
 
 =item B<d>
 
@@ -1886,9 +2124,18 @@ Quit B<mytop>
 
 Reset the server's status counters via a I<FLUSH STATUS> command.
 
+=item B<R>
+
+Togle IP reverse lookup. Default is on.
+
 =item B<s>
 
 Change the sleep time (number of seconds between display refreshes).
+
+=item B<S>
+
+Set the number of seconds a query will need to run before it is
+considered old and will be highlighted.
 
 =item B<u>
 
@@ -1968,7 +2215,7 @@ output of B<mytop> is coming from.
 
 =head1 COPYRIGHT
 
-Copyright (C) 2000-2001, Jeremy D. Zawodny.
+Copyright (C) 2000-2010, Jeremy D. Zawodny.
 
 =head1 CREDITS
 
@@ -1977,6 +2224,15 @@ Fix a bug. Add a feature. See your name here!
 Many thanks go to these fine folks:
 
 =over
+
+=item Mark Grennan (mark@grennan.com) www.linuxfangoy.com
+
+Added updates for MySQL 5.x. Added 'S' (slow) highlighting.
+Added 'C' to turn on and off Color. Added 'l' command to change
+color for long running queries. Fixed a few documentation issues.
+Monitors Slave status. Added color to Queue hit ratio.
+Added number of rows sorted per second.
+Created release 1.7.
 
 =item Sami Ahlroos (sami@avis-net.de)
 
