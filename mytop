@@ -1,6 +1,5 @@
 #!/usr/bin/perl -w
-#
-# $Id: mytop,v 1.91 2012/01/18 16:49:12 mgrennan Exp $
+# vim: set ts=4 sw=4 expandtab:
 
 =pod
 
@@ -19,7 +18,7 @@ use Getopt::Long;
 use DBD::mysql;
 use Socket;
 
-$main::VERSION = "1.91";
+$main::VERSION = "2.0";
 
 $|=1;
 $0 = 'mytop';
@@ -41,6 +40,8 @@ eval { require Time::HiRes };
 my $HAS_TIME = $@ ? 0 : 1;
 
 my $debug = 0;
+
+
 
 ## Try to lower our priority (which, who, pri)
 
@@ -85,14 +86,14 @@ my %config = (
     help          => 0,
     host          => 'localhost',
     idle          => 1,
-    long	  => 120,
+    long      => 120,
     long_nums     => 0,
     mode          => 'top',
     prompt        => 0,
     pass          => '',
     port          => 3306,
     resolve       => 0,
-    slow	  => 10,	# slow query time
+    slow      => 10,    # slow query time
     socket        => '',
     sort          => 1,         # default or reverse sort ("s")
     user          => 'root'
@@ -127,7 +128,7 @@ if (-e $config)
 
             chomp;
 
-	    if (/(\S+)\s*=\s*(.*\S)/)
+        if (/(\S+)\s*=\s*(.*\S)/)
             {
                 $config{lc $1} = $2 if exists $config{lc $1};
             }
@@ -156,10 +157,10 @@ GetOptions(
     "idle|i!"             => \$config{idle},
     "resolve|r!"          => \$config{resolve},
     "prompt!"             => \$config{prompt},
-    "long=i"		  => \$config{long},
+    "long=i"          => \$config{long},
     "long_nums!"          => \$config{long_nums},
     "mode|m=s"            => \$config{mode},
-    "slow=i"		  => \$config{slow},
+    "slow=i"          => \$config{slow},
     "sort=s"              => \$config{sort}
 );
 
@@ -280,13 +281,13 @@ foreach (@variables)
     if ($_->{Variable_name} eq "version")
     {
         $db_version = $_->{Value};
-	$db_release = int(sprintf("%d",$db_version));
+    $db_release = int(sprintf("%d",$db_version));
         next;
     }
     if ($_->{Variable_name} eq "have_query_cache")
     {
 #        if ($_->{Value} eq 'YES')
-	if ($_->{Value} eq 'YES' or $_->{Value} eq 'DEMAND')  # http://freshmeat.net/users/jerjones
+    if ($_->{Value} eq 'YES' or $_->{Value} eq 'DEMAND')  # http://freshmeat.net/users/jerjones
         {
             $have_query_cache = 1;
         }
@@ -363,8 +364,8 @@ while (1)
     if ($key eq '!')
     {
         Execute("stop slave");
-	Execute("set global sql_slave_skip_counter=1");
-	Execute("start slave");
+    Execute("set global sql_slave_skip_counter=1");
+    Execute("start slave");
     }
 
     # t - top
@@ -420,14 +421,14 @@ while (1)
 
     if ($key eq 'C')
     {
-	if ( $HAS_COLOR ) 
+    if ( $HAS_COLOR ) 
         {
-	    $HAS_COLOR = 0;
-	}
-	else
-	{
-	    $HAS_COLOR = 1;
-	}
+        $HAS_COLOR = 0;
+    }
+    else
+    {
+        $HAS_COLOR = 1;
+    }
     }
 
     ## s - seconds of delay
@@ -440,8 +441,8 @@ while (1)
 
     if ($key eq 'S')
     {
-	cmd_S();
-	next;
+    cmd_S();
+    next;
     }
 
     ## R - resolve hostnames
@@ -485,7 +486,7 @@ while (1)
     {
         ReadMode($RM_RESET);
         print RED(), "Which database (blank for all, /.../ for regex): ",
-            RESET();
+        RESET();
         $config{filter_db} = StringOrRegex(ReadLine(0));
         ReadMode($RM_NOBLKRD);
         next;
@@ -497,7 +498,7 @@ while (1)
     {
         ReadMode($RM_RESET);
         print RED(), "Which hostname (blank for all, /.../ for regex): ",
-            RESET();
+        RESET();
         $config{filter_host} = StringOrRegex(ReadLine(0));
         ReadMode($RM_NOBLKRD);
         next;
@@ -507,12 +508,12 @@ while (1)
 
     if ($key eq 'E')
     {
-	my($data) = Hashes('SHOW SLAVE STATUS');
-	Clear();
-	print "Error is: $data->{Last_Error}\n";
+        my($data) = Hashes('SHOW SLAVE STATUS');
+        Clear();
+        print "Error is: $data->{Last_Error}\n";
         print RED(), "-- paused. press any key to resume --", RESET();
-	ReadKey(0);
-	next;
+        ReadKey(0);
+        next;
     }
     ## F - remove all filters
 
@@ -780,13 +781,13 @@ sub GetData()
     {
         my @recs = "";
         if ( $db_release > 4 ) 
-	{
+    {
             @recs = Hashes("show global status");
-	} 
-	else 
-	{
+    } 
+    else 
+    {
            @recs = Hashes("show status");
-	}
+    }
 
         ## if the server died or we lost connectivity
         if (not @recs)
@@ -843,7 +844,7 @@ sub GetData()
         ## | Qcache_free_blocks      | 2        |
         ## | Qcache_total_blocks     | 168      |
         ## +-------------------------+----------+
-	##
+    ##
         ## Query Cache info for => Ver. 5.0
         ##
         ## mysql> show status like 'qcache%';
@@ -876,10 +877,10 @@ sub GetData()
             }
         }
 
-	open L, "</proc/loadavg";
-	my $l = <L>;
-	close L;
-	chomp $l;
+    open L, "</proc/loadavg";
+    my $l = <L>;
+    close L;
+    chomp $l;
 
         $last_time = $now_time;
 
@@ -935,7 +936,7 @@ sub GetData()
 #          print("q_diff: $STATUS{Questions} - $OLD_STATUS{Questions}  / $t_delta = $q_diff\n");
 
           printf(" Sorts: %5.0f qps now: %4.0f Slow qps: %3.1f  Threads: %4.0f (%4.0f/%4.0f) %02.0f/%02.0f/%02.0f/%02.0f \n",
-		 ( $STATUS{Sort_rows} - $OLD_STATUS{Sort_rows} ) / $t_delta, 
+         ( $STATUS{Sort_rows} - $OLD_STATUS{Sort_rows} ) / $t_delta, 
                  ( $STATUS{Questions} - $OLD_STATUS{Questions} ) / $t_delta,
                  ( # slow now (qps)
                   ($STATUS{Slow_queries} ) ?
@@ -1004,6 +1005,13 @@ sub GetData()
         }
         $lines_left--;
 
+        my($data) = Hashes('show global variables like "read_only"');
+        if ($data->{Value} ne "OFF")
+        {
+            print RED() if ($HAS_COLOR) ;
+            print " ReadOnly";
+            print RESET() if ($HAS_COLOR);
+        }
 
         printf(" Key Efficiency: %2.1f%%  Bps in/out: %5s/%5s   ",
                $cache_hits_percent,
@@ -1017,49 +1025,65 @@ sub GetData()
 
         $lines_left--;
 
-        my($data) = Hashes('show global variables like "read_only"');
-        if ($data->{Value} ne "OFF")
+        use Data::Dumper;
+        my @slaves = qq//;
+        $data = Records('SHOW ALL SLAVES STATUS');
+        if (defined($data))
         {
-            print RED() if ($HAS_COLOR) ;
-            print " ReadOnly";
-	    RESET() if ($HAS_COLOR);
+            for (my $i=0; $i<=$#{$data}; $i++)
+            {
+                push @slaves, $data->[$i][0] if ($data->[$i][0] ne '');
+            }
         }
-
-	my($data) = Hashes('SHOW SLAVE STATUS');
-	if (defined($data->{Master_Host}))
+        foreach my $slave (@slaves)
         {
-	    if (defined($data->{Seconds_Behind_Master}))
-	    {
-                if ($HAS_COLOR) {
-	  	    print GREEN();
-		    print YELLOW() if ($data->{Seconds_Behind_Master}  >  60);
-		    print MAGENTA() if ($data->{Seconds_Behind_Master} > 360);
-	        }
-	    }
-	    print " Replication ";
-	    print "IO:$data->{Slave_IO_Running} ";
- 	    print "SQL:$data->{Slave_SQL_Running} ";
-	    print RESET() if ($HAS_COLOR);
+            my($data);
+            if ($slave eq '')
+            {
+                ($data) = Hashes('SHOW SLAVE STATUS');
+                $slave = 'Main';
+            }
+            else
+            {
+                ($data) = Hashes("SHOW SLAVE '$slave' STATUS");
+            }
+            if (defined($data->{Master_Host}))
+            {
+                if (defined($data->{Seconds_Behind_Master}))
+                {
+                    if ($HAS_COLOR) {
+                        print GREEN();
+                        print YELLOW() if ($data->{Seconds_Behind_Master}  >  60);
+                        print MAGENTA() if ($data->{Seconds_Behind_Master} > 360);
+                    }
+                }
+                printf("%-20s Replication ", $slave);
+                print "IO:$data->{Slave_IO_Running} ";
+                print "SQL:$data->{Slave_SQL_Running} ";
+                print RESET() if ($HAS_COLOR);
 
- 	    if (defined($data->{Seconds_Behind_Master}))
-	    {
-        	if ($HAS_COLOR) {
-			print GREEN();
-			print YELLOW() if ($data->{Seconds_Behind_Master}  >  60);
-			print MAGENTA() if ($data->{Seconds_Behind_Master} > 360);
-		}
-		print "Delay: $data->{Seconds_Behind_Master} sec.";
-	    } else {
-	        my $free = $width - 45;
-		my $Err = substr $data->{Last_Error},0 ,$free;
-	        printf(" ERR: %-${free}s", $Err) if ( $Err ne "" );
-	    }
-	    print WHITE() if ($HAS_COLOR);
-	    print "\n";
-	    $lines_left--;
-	}
-	print "\n";
+                if (defined($data->{Seconds_Behind_Master}))
+                {
+                    if ($HAS_COLOR)
+                    {
+                        print GREEN();
+                        print YELLOW() if ($data->{Seconds_Behind_Master}  >  60);
+                        print MAGENTA() if ($data->{Seconds_Behind_Master} > 360);
+                    }
+                    print "Delay: $data->{Seconds_Behind_Master} sec.";
+                } else {
+                    my $free = $width - 45;
+                    my $Err = substr $data->{Last_Error},0 ,$free;
+                    printf(" ERR: %-${free}s", $Err) if ( $Err ne "" );
+                }
+                print WHITE() if ($HAS_COLOR);
+                print "\n";
+                $lines_left--;
+            }
+        }
+        print "\n";
     }
+        
 
     if (not $config{batchmode} and not $config{header})
     {
@@ -1118,8 +1142,8 @@ sub GetData()
         if ($is_ip and $config{resolve})
         {
             $thread->{Host} =~ s/:\d+$//;
-#	    my $host = $thread->{Host};
-	    my $host = gethostbyaddr(inet_aton($thread->{Host}), AF_INET);
+#        my $host = $thread->{Host};
+        my $host = gethostbyaddr(inet_aton($thread->{Host}), AF_INET);
 #            $host =~ s/^([^.]+).*/$1/;
             $thread->{Host} = $host;
         }
@@ -1133,11 +1157,11 @@ sub GetData()
         $thread->{User}    ||= '';
         $thread->{Command} ||= '';
         $thread->{Host}    ||= '';
-	$thread->{State}   ||= "";
+    $thread->{State}   ||= "";
 
-	## alter double hyphen comments so they don't break 
-	## the query when newlines are removed - http://freshmeat.net/users/jerjones
-	$thread->{Info} =~ s~\s--(.*)$~ /* $1 */ ~mg; 
+    ## alter double hyphen comments so they don't break 
+    ## the query when newlines are removed - http://freshmeat.net/users/jerjones
+    $thread->{Info} =~ s~\s--(.*)$~ /* $1 */ ~mg; 
 
         ## Normalize spaces -- mostly disabled for now.  This can
         ## break EXPLAIN if you try to explain a mangled query.  It
@@ -1223,7 +1247,7 @@ sub GetData()
             print WHITE()  if $thread->{Command} eq 'Sleep';
             print GREEN()  if $thread->{Command} eq 'Connect';
             print BOLD() if $thread->{Time} > $config{slow};
-	    print MAGENTA() if $thread->{Time} > $config{long};
+        print MAGENTA() if $thread->{Time} > $config{long};
         }
 
         printf "%9d %9.9s %15.15s %10.10s %10d %6.6s %8.8s %-${free}.${free}s\n",
@@ -1607,10 +1631,10 @@ sub cmd_q
 
 sub trim($)
 {
-	my $string = shift;
-	$string =~ s/^\s+//;
-	$string =~ s/\s+$//;
-	return $string;
+    my $string = shift;
+    $string =~ s/^\s+//;
+    $string =~ s/\s+$//;
+    return $string;
 }
 
 ###########################################################################
@@ -1620,6 +1644,7 @@ sub PrintHelp()
     my $help = qq[
 Help for mytop version $main::VERSION by Jeremy D. Zawodny <${YELLOW}Jeremy\@Zawodny.com${RESET}>
  with updates by Mark Grennan <${YELLOW}mark\@grennan.com${RESET}>
+ and Grégory Duchatelet <${YELLOW}gregory\@duchatelet.net${RESET}>
 
   ? - display this screen
   # - toggle short/long numbers (not yet implemented)
@@ -1695,13 +1720,19 @@ sub Hashes($)
 
     if (my $sth = Execute($sql))
     {
-	while (my $ref = $sth->fetchrow_hashref)
+        while (my $ref = $sth->fetchrow_hashref)
         {
             print "record\n" if $debug;
-	    push @records, $ref;
-	}
+            push @records, $ref;
+        }
     }
     return @records;
+}
+
+sub Records($)
+{
+    my $sql = shift;
+    return $dbh->selectall_arrayref($sql);
 }
 
 ## Execute an SQL query and return the statement handle.
@@ -2224,6 +2255,10 @@ Fix a bug. Add a feature. See your name here!
 Many thanks go to these fine folks:
 
 =over
+
+=item Grégory Duchatelet (gregory@duchatelet.net)
+
+TODO
 
 =item Mark Grennan (mark@grennan.com) www.linuxfangoy.com
 
