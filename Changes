@@ -1,3 +1,9 @@
+Version 2.0: - Grégory Duchatelet
+  Released 2.0 on Feb 06, 2015.
+
+  Added support for multi-sources replication introduced
+  in MariaDB 10.
+
 Version 1.9.1: - Mark Grennan
   Released 1.9.1 on Feb 14, 2012. Be my Valintine
 
