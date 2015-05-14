@@ -1017,8 +1017,8 @@ sub GetData()
 
         $lines_left--;
 
-        my($data) = Hashes('show global variables like "read_only"');
-        if ($data->{Value} ne "OFF")
+        my($dataRO) = Hashes('show global variables like "read_only"');
+        if ($dataRO->{Value} ne "OFF")
         {
             print RED() if ($HAS_COLOR) ;
             print " ReadOnly";
