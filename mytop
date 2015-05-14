@@ -1072,19 +1072,19 @@ sub GetData()
     ##
 
     #my $sz = $width - 52;
-    my @sz   = (9, 9, 15, 10, 10, 6, 8);
+    my @sz   = (11, 9, 15, 10, 10, 6, 8);
     my $used = scalar(@sz) + Sum(@sz);
     my $free = $width - $used;
 
     print BOLD() if ($HAS_COLOR);
 
-    printf "%9s %9s %15s %10s %10s %6s %8s %-${free}s\n",
+    printf "%11s %9s %15s %10s %10s %6s %8s %-${free}s\n",
         'Id','User','Host/IP','DB','Time', 'Cmd', 'State', 'Query';
 
     print RESET() if ($HAS_COLOR);
 
     ##      Id User Host DB
-    printf "%9s %9s %15s %10s %10s %6s %8s %-${free}s\n",
+    printf "%11s %9s %15s %10s %10s %6s %8s %-${free}s\n",
         '--','----','-------','--','----', '---', '-----', '----------';
 
     $lines_left -= 2;
@@ -1226,7 +1226,7 @@ sub GetData()
 	    print MAGENTA() if $thread->{Time} > $config{long};
         }
 
-        printf "%9d %9.9s %15.15s %10.10s %10d %6.6s %8.8s %-${free}.${free}s\n",
+        printf "%11d %9.9s %15.15s %10.10s %10d %6.6s %8.8s %-${free}.${free}s\n",
             $thread->{Id}, $thread->{User}, $thread->{Host}, $thread->{db},
             $thread->{Time}, $thread->{Command}, $thread->{State}, $smInfo;
 
