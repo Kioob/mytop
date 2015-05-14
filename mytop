@@ -991,7 +991,7 @@ sub GetData()
                    ) || 1) : 0;
           if ($HAS_COLOR)
           {
-                print GREEN() if ($Ratio_now => 80.0);
+                print GREEN() if ($Ratio_now >= 80.0);
                 print YELLOW() if ($Ratio_now < 80.0);
                 print RED() if ($Ratio_now < 50.0);
                 print MAGENTA() if ($Ratio_now < 20.0);
